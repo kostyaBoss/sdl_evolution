@@ -22,7 +22,7 @@ This won't allow to implement use cases related to dynamic resolution switching,
  - Split screen
  - Collapsed view
 
-The idea of the proposal is to add such possibility into SDL ecosystem.
+The idea of the proposal is to add such possibility into SDL ecosystem. Also offered solution would allow to adjust size of UI elements depends on a current screen mode.
 
 ## Proposed solution
 
@@ -42,8 +42,8 @@ Available and supported VSCs needs to be negotiated between HMI and Mobile appli
 </struct>
 ```
 
-2. Mobile application obtains these VSCs within `GetSystemCapability` request of `VIDEO_STREAMING` type.
-Within this request mobile application also subscribes to receive VSC updates.
+2. Mobile application obtains these VSCs through `GetSystemCapability` request of `VIDEO_STREAMING` type.
+Within this request mobile application also subscribes to receive future VSC updates.
 
 3. Mobile application provides supported by application VSCs within new `OnAppCapabilityUpdated` notification.
 
@@ -88,6 +88,8 @@ In order to notify Mobile application on current VSC HMI may use existing `OnSys
 
 Mobile application will receive such updates if it has been subscribed to them previously.
 
+There is no changes expected on a protocol level. Just existing service Stop/Start sequences would be utilized.
+
 ![Sequence diagram](../assets/proposals/0296-Update-video-streaming-capabilities-during-ignition-cycle/Resolution_Switching.svg)
 
 ### Mobile libraries changes (iOS and Android)
@@ -95,20 +97,25 @@ Mobile application will receive such updates if it has been subscribed to them p
 #### Negotiation of VSCs
 
 Mobile application has to provide back to HMI filtered list of supported VSCs based on the complete list provided by HMI.
-This mechanism needs to be simplified for application developers.
 
-The idea is to add some changes into Public API:
- - min/max aspect ratio
- - min/max resolution
- - minimum diagonalScreenSize
+In order to simplify this mechanism for application developers there is an idea to add VSC constraints into Public API.
 
-<ToDo: add more details on filtration logic>
+To generalize both Android and iOS platforms these are public methods (or properties) that need to be implemented by application developer:
+ - min/max `aspectRatio`
+ - min/max `resolution`
+ - min `diagonalScreenSize`
 
-**Examples**
+While `diagonalScreenSize` is mandatory, `aspectRatio` and `resolution` are optional. Combining `diagonalScreenSize` with `aspectRatio` or `resolution` the flow of choosing supported VSCs would look in next way:
+1. Start iterating through all VSCs provided by HMI
+2. If `diagonalScreenSize` provided by HMI is less than developer's constraint, skip this VSC and go to next iteration, otherwise check `aspectRatio` constraint
+3. If `aspectRatio` suits constraint provided - add this VSC to supported VCS list, otherwise check `resolution` constraint
+4. If `resolution` suits constraint provided - add this VSC to supported VSC list, otherwise go to next iteration
+
+***Examples***
 
 **iOS**
 
-In `SDLStreamingMediaConfiguration` class:
+In `SDLStreamingMediaConfiguration`:
 
 ```objectivec
 @property (strong, nonatomic, nullable) SDLSupportedStreamingRange *supportedLandscapeStreamingRange;
@@ -170,30 +177,42 @@ public Integer getMaxSupportedHeight() {
 public double getMinScreenDiagonal() {
   return 6;
 }
-   @Override
-   public Double getMinAspectRatio() {
-     return 1.;
-   }
-   @Override
-   public Double getMaxAspectRatio() {
-     return 4.;
-   }
+@Override
+public Double getMinAspectRatio() {
+  return 1.;
+}
+@Override
+public Double getMaxAspectRatio() {
+  return 4.;
+}
 ```
 
 #### Resolution Switching
 
 Mobile applications should be able to update the streaming content window to the new VSCs received in `OnSystemCapabilityUpdated`.
 
-SDL Manager shouldn't check and validate the VSC HMI sends to app to switch to.
+In order to do this application developers would be notified with a callback `onViewResized(width, height)/videoStreamingSizeDidUpdate:(CGSize)displaySize`. It would be called once new data on resolution is retrieved from HMI and internal process in library of proper component change is finished. This callback is passed to implemented by developers classes responsible for markup, where UI reorganization could be handled.
 
-<ToDo: add more details on callbacks>
+SDL Manager wouldn't check and validate the VSC HMI sends to app to switch to.
 
 ### HMI Guidelines
 
+HMI guidelines would need to include the following recommendations how various screen modes have to be handled.
+
 If the change is a PIP-type change, scale the current video stream to the size you desire without going through this flow. Touches should never be passed to the app. Either a system menu/buttons should be displayed when selected, or the selection should bring the user immediately back to the full-screen app.
 
-If the change is a split-screen type change (and cannot be handled by scaling the original video), then go through this flow. If the app does not support your custom split-resolution, either don't allow the user to put the app in split screen, or scale the video stream to a size that fits the window and use "black bars" to fill the rest of the window. Touches may be passed to the app in certain limited cases. (1) The window must have a width of at least 3" and a height of at least 3", (2) The touches must be offset for the developer so that 0,0 continues to be in the top-left corner of the app window. If these requirements are not met, either a system menu / buttons should be displayed when selected, or the selection should bring the user immediately back to the full-screen app.
+If the change is a split-screen type change (and cannot be handled by scaling the original video), then go through this flow. If the app does not support your custom split-resolution, either don't allow the user to put the app in split screen, or scale the video stream to a size that fits the window and use "black bars" to fill the rest of the window. Touches may be passed to the app in certain limited cases.
 
+ * The window must have a width of at least 3" and a height of at least 3".
+
+ * The touches must be offset for the developer so that 0,0 continues to be in the top-left corner of the app window. If these requirements are not met, either a system menu / buttons should be displayed when selected, or the selection should bring the user immediately back to the full-screen app.
+
+### Old applications behavior
+
+In case if a particular application doesn't support this feature at all it wouldn't send `OnAppCapabilityUpdated` notification to SDL.
+Hence HMI would treat this application as the one which doesn't support dynamic resolution switching and would allow only full-screen mode for it.
+
+Nevertheless [alternatives solution](0296-Update-video-streaming-capabilities-during-ignition-cycle.md#alternatives-considered) may be implemented on HMI to handle such applications.
 
 ## Potential downsides
 
@@ -202,12 +221,11 @@ The author was unable to identify any potential downsides.
 ## Impact on existing code
 
 * SDL core needs to be updated to support described logic and new APIs.
-* Java Suite and iOS proxy libraries would require updates related to dynamic resolution switching.
+* Java Suite and iOS proxy libraries would require updates related to dynamic resolution switching and new APIs.
 * HMI need to be updated to handle only supported VSCs received from Mobile application.
 
 ## Alternatives considered
 
-1. Implement scaling of video frame completely at HMI. This approach has the following drawbacks:
+Implement scaling of video frame completely at HMI. This approach has the following drawbacks:
   - aspect ratio remains the same
-  - size of UI elements couldn't be adjusted for a smaller resolution and hence became unusable
-
+  - size of touchable UI elements couldn't be adjusted for a smaller resolution and hence became unusable
