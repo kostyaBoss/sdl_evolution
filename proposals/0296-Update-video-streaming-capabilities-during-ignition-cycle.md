@@ -43,7 +43,7 @@ Available and supported VSCs needs to be negotiated between HMI and Mobile appli
 ```
 
 2. Mobile application obtains these VSCs through `GetSystemCapability` request of `VIDEO_STREAMING` type.
-Within this request mobile application also subscribes to receive future VSC updates.
+Within this request mobile application (SDL library) can also subscribe to receive future VSC updates.
 
 3. Mobile application provides supported by application VSCs within new `OnAppCapabilityUpdated` notification.
 
@@ -88,7 +88,7 @@ In order to notify Mobile application on current VSC HMI may use existing `OnSys
 
 Mobile application will receive such updates if it has been subscribed to them previously.
 
-There is no changes expected on a protocol level. Just existing service Stop/Start sequences would be utilized.
+There are no changes expected on a protocol level. Just existing service Stop/Start sequences would be utilized.
 
 ![Sequence diagram](../assets/proposals/0296-Update-video-streaming-capabilities-during-ignition-cycle/Resolution_Switching.svg)
 
@@ -96,7 +96,7 @@ There is no changes expected on a protocol level. Just existing service Stop/Sta
 
 #### Negotiation of VSCs
 
-Mobile application has to provide back to HMI filtered list of supported VSCs based on the complete list provided by HMI.
+Mobile application (SDL library) has to provide back to HMI filtered list of supported VSCs based on the complete list provided by HMI.
 
 In order to simplify this mechanism for application developers there is an idea to add VSC constraints into Public API.
 
@@ -222,10 +222,10 @@ The author was unable to identify any potential downsides.
 
 * SDL core needs to be updated to support described logic and new APIs.
 * Java Suite and iOS proxy libraries would require updates related to dynamic resolution switching and new APIs.
-* HMI need to be updated to handle only supported VSCs received from Mobile application.
+* HMI needs to be updated to handle only supported VSCs received from Mobile application.
 
 ## Alternatives considered
 
 Implement scaling of video frame completely at HMI. This approach has the following drawbacks:
   - aspect ratio remains the same
-  - size of touchable UI elements couldn't be adjusted for a smaller resolution and hence became unusable
+  - size of the touchable UI elements cannot be adjusted for a small resolutions and hence the elements become hard to use
